@@ -630,6 +630,14 @@ function OnboardingView({ onStart }) {
   const [topic, setTopic] = useState('');
   const [key, setKey] = useState('');
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlKey = params.get('key');
+    if (urlKey) {
+      setKey(urlKey);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-6">
       <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-2xl text-center">
