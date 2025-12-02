@@ -78,10 +78,9 @@ function useSpeechRecognition(onResult) {
 
 // --- API CONFIGURATION ---
 // --- API CONFIGURATION ---
-// apiKey is now passed dynamically from the user input
+const apiKey = "AIzaSyADtKwmL_To1QzC43a4Lk6XjcdvesQTwH8"; // Hardcoded for prototype
 
-async function callGemini(prompt, apiKey) {
-  if (!apiKey) return null;
+async function callGemini(prompt) {
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
@@ -156,21 +155,21 @@ const PHASES = [
 // --- AI SERVICES ---
 
 // 1. Guide Safety Check (Runs on every message)
-const runSafetyCheck = async (text, apiKey) => {
+const runSafetyCheck = async (text) => {
   const prompt = `
     You are "Guide", a facilitator for a conflict resolution platform.
     Analyze this message for hostility, insults, or dismissiveness.
     Message: "${text}"
     Return JSON: { "status": "approved" } OR { "status": "rejected", "title": "Issue", "message": "Feedback" }
   `;
-  const res = await callGemini(prompt, apiKey);
+  const res = await callGemini(prompt);
   if (!res) return { status: 'approved' }; // Fail open if AI fails, or handle differently
   try { return JSON.parse(res.replace(/```json|```/g, '').trim()); }
   catch (e) { return { status: 'approved' }; }
 };
 
 // 2. Guide Transition Logic (Runs at end of phase)
-const generateGuideGuidance = async (history, currentPhase, nextPhase, topic, apiKey) => {
+const generateGuideGuidance = async (history, currentPhase, nextPhase, topic) => {
   const context = history.map(m => `${m.sender === 'A' ? 'User A' : 'User B'}: ${m.text}`).join('\n');
 
   const prompt = `
@@ -193,11 +192,11 @@ const generateGuideGuidance = async (history, currentPhase, nextPhase, topic, ap
     - Keep it encouraging and concise.
   `;
 
-  return await callGemini(prompt, apiKey) || `Let's move on. ${nextPhase.goal}`;
+  return await callGemini(prompt) || `Let's move on. ${nextPhase.goal}`;
 };
 
 // 3. Guide Q&A Logic (Runs when user asks Guide - Public or Private)
-const generateGuideAnswer = async (history, question, topic, phase, apiKey) => {
+const generateGuideAnswer = async (history, question, topic, phase) => {
   const context = history.map(m => `${m.sender === 'A' ? 'User A' : m.sender === 'B' ? 'User B' : 'Guide'}: ${m.text}`).join('\n');
 
   const prompt = `
@@ -217,7 +216,7 @@ const generateGuideAnswer = async (history, question, topic, phase, apiKey) => {
     - Be brief (max 2 sentences).
   `;
 
-  return await callGemini(prompt, apiKey) || "I'm here to help you understand each other better.";
+  return await callGemini(prompt) || "I'm here to help you understand each other better.";
 };
 
 // --- COMPONENTS ---
@@ -240,7 +239,6 @@ const Button = ({ children, onClick, variant = 'primary', className = '', disabl
 export default function YPlatformApp() {
   const [appState, setAppState] = useState('onboarding');
   const [topic, setTopic] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [messages, setMessages] = useState([]);
 
   // Conversation State
@@ -293,9 +291,8 @@ export default function YPlatformApp() {
     await stop();
   };
 
-  const handleStart = (selectedTopic, key) => {
+  const handleStart = (selectedTopic) => {
     setTopic(selectedTopic);
-    setApiKey(key);
     setAppState('chat');
     // Initial Guide Welcome - Natural Language
     const phase1Prompt = PHASES[0].staticPrompt(selectedTopic);
@@ -316,7 +313,7 @@ export default function YPlatformApp() {
 
       // 1. Get Guide Response (DO NOT add to public messages array)
       const currentP = PHASES.find(p => p.id === phase);
-      const guideAnswer = await generateGuideAnswer(messages, transcribedText, topic, currentP, apiKey);
+      const guideAnswer = await generateGuideAnswer(messages, transcribedText, topic, currentP);
 
       // 2. Set private hint state for temporary display
       setPrivateHint(guideAnswer);
@@ -344,7 +341,7 @@ export default function YPlatformApp() {
 
       // 2. Get Guide Response (to public history)
       const currentP = PHASES.find(p => p.id === phase);
-      const guideAnswer = await generateGuideAnswer(messages, transcribedText, topic, currentP, apiKey);
+      const guideAnswer = await generateGuideAnswer(messages, transcribedText, topic, currentP);
 
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
@@ -364,7 +361,7 @@ export default function YPlatformApp() {
       // --- NORMAL PARTNER MESSAGE ---
 
       // 1. Safety Check
-      const safety = await runSafetyCheck(transcribedText, apiKey);
+      const safety = await runSafetyCheck(transcribedText);
       if (safety.status === 'rejected') {
         setModerationError(safety);
         setIsProcessing(false);
@@ -397,7 +394,7 @@ export default function YPlatformApp() {
           const currentP = PHASES.find(p => p.id === phase);
           const nextP = PHASES.find(p => p.id === phase + 1);
 
-          const guidance = await generateGuideGuidance(updatedHistory, currentP, nextP, topic, apiKey);
+          const guidance = await generateGuideGuidance(updatedHistory, currentP, nextP, topic);
 
           setMessages(prev => [...prev, {
             id: Date.now() + 1,
@@ -628,15 +625,6 @@ export default function YPlatformApp() {
 
 function OnboardingView({ onStart }) {
   const [topic, setTopic] = useState('');
-  const [key, setKey] = useState('');
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlKey = params.get('key');
-    if (urlKey) {
-      setKey(urlKey);
-    }
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-6">
@@ -648,22 +636,7 @@ function OnboardingView({ onStart }) {
 
         <div className="text-left space-y-4 mb-8">
           <div>
-            <label className="text-sm font-bold text-slate-700 uppercase ml-1 tracking-wide block mb-2">1. Enter Gemini API Key</label>
-            <input
-              type="password"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder="Paste your API key here..."
-              className="w-full p-4 rounded-2xl border-2 border-slate-200 focus:border-indigo-500 outline-none transition-all"
-            />
-            <p className="text-xs text-slate-400 mt-2 ml-1">
-              Your key is stored locally in your browser and never sent to our servers.
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline ml-1">Get a key here</a>.
-            </p>
-          </div>
-
-          <div>
-            <label className="text-sm font-bold text-slate-700 uppercase ml-1 tracking-wide block mb-2">2. Choose a Topic</label>
+            <label className="text-sm font-bold text-slate-700 uppercase ml-1 tracking-wide block mb-2">Choose a Topic</label>
             <div className="space-y-2">
               {TOPICS.map(t => (
                 <button key={t} onClick={() => setTopic(t)} className={`w-full p-4 rounded-2xl border-2 text-left font-semibold transition-all shadow-sm ${topic === t ? 'border-indigo-500 bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 shadow-lg scale-[1.02]' : 'border-slate-200 text-slate-700 hover:border-indigo-300 hover:shadow-md active:scale-95'}`}>
@@ -674,7 +647,7 @@ function OnboardingView({ onStart }) {
           </div>
         </div>
 
-        <button onClick={() => onStart(topic, key)} disabled={!topic || !key} className={`w-full py-5 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-xl transition-all ${!topic || !key ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-2xl hover:scale-[1.02] active:scale-95'}`}>
+        <button onClick={() => onStart(topic)} disabled={!topic} className={`w-full py-5 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-xl transition-all ${!topic ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-2xl hover:scale-[1.02] active:scale-95'}`}>
           Begin Dialogue
         </button>
       </div>
