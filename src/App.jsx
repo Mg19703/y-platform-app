@@ -1,74 +1,78 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Play, Pause, Send, Shield, CheckCircle, RefreshCcw, Info, User, BarChart2, Clock, Heart, Loader2, Users, Sparkles, HelpCircle, MessageSquare, BookOpen, MessageCircle, AlertTriangle } from 'lucide-react';
-import { SpeechRecognition } from '@capacitor-community/speech-recognition';
+// Removed Capacitor import to favor Web Speech API for GitHub Pages
+// import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 
 /**
- * Custom hook to manage speech recognition using Capacitor plugin
+ * Custom hook to manage speech recognition using Web Speech API
  */
 function useSpeechRecognition(onResult) {
-    const [isListening, setIsListening] = useState(false);
-    const resultCallbackRef = useRef(onResult);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
 
-    useEffect(() => {
-        resultCallbackRef.current = onResult;
-    }, [onResult]);
+  useEffect(() => {
+    // Initialize SpeechRecognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      recognitionRef.current = recognition;
+    }
+  }, []);
 
-    const start = async () => {
-        try {
-            // Request permissions
-            const permission = await SpeechRecognition.requestPermissions();
-            if (permission.speechRecognition !== 'granted') {
-                console.error('Speech recognition permission denied');
-                return;
-            }
+  const start = async () => {
+    if (!recognitionRef.current) {
+      alert("Speech recognition is not supported in this browser. Please use Chrome or Safari.");
+      return;
+    }
 
-            // Check if available
-            const available = await SpeechRecognition.available();
-            if (!available.available) {
-                console.error('Speech recognition not available');
-                return;
-            }
+    try {
+      recognitionRef.current.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
 
-            setIsListening(true);
-
-            // Start listening
-            await SpeechRecognition.start({
-                language: 'en-US',
-                maxResults: 1,
-                prompt: 'Speak now...',
-                partialResults: true,
-                popup: false,
-            });
-
-            // Listen for results
-            SpeechRecognition.addListener('partialResults', (data) => {
-                if (data.matches && data.matches.length > 0) {
-                    resultCallbackRef.current(data.matches[0]);
-                }
-            });
-
-        } catch (error) {
-            console.error('Speech recognition error:', error);
-            setIsListening(false);
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
         }
-    };
+        // We pass the latest interim or final text
+        onResult(finalTranscript || interimTranscript);
+      };
 
-    const stop = async () => {
-        try {
-            await SpeechRecognition.stop();
-            setIsListening(false);
-        } catch (error) {
-            console.error('Error stopping speech recognition:', error);
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+          alert("Microphone access denied. Please allow microphone access.");
         }
-    };
+        setIsListening(false);
+      };
 
-    useEffect(() => {
-        return () => {
-            SpeechRecognition.removeAllListeners();
-        };
-    }, []);
+      recognitionRef.current.onend = () => {
+        // If it stops unexpectedly, update state
+        // But we handle manual stop in stop()
+      };
 
-    return { start, stop, isListening };
+      recognitionRef.current.start();
+      setIsListening(true);
+    } catch (error) {
+      console.error("Error starting speech recognition:", error);
+      setIsListening(false);
+    }
+  };
+
+  const stop = async () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  };
+
+  return { start, stop, isListening };
 }
 
 
@@ -404,7 +408,7 @@ export default function YPlatformApp() {
 
     // Clear private hint if a normal message was sent
     if (interactionMode === 'partner') {
-        setPrivateHint(null);
+      setPrivateHint(null);
     }
   };
 
@@ -435,10 +439,10 @@ export default function YPlatformApp() {
           </div>
 
           <div className="flex items-center gap-3">
-             <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden backdrop-blur">
-               <div className="h-full bg-white transition-all duration-500 rounded-full" style={{ width: `${(phase/6)*100}%` }} />
-             </div>
-             <span className="text-sm font-semibold text-white/90">Phase {phase}/6</span>
+            <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden backdrop-blur">
+              <div className="h-full bg-white transition-all duration-500 rounded-full" style={{ width: `${(phase / 6) * 100}%` }} />
+            </div>
+            <span className="text-sm font-semibold text-white/90">Phase {phase}/6</span>
           </div>
         </div>
 
@@ -448,11 +452,11 @@ export default function YPlatformApp() {
             if (msg.sender === 'guide') {
               return (
                 <div key={msg.id} className="flex gap-3 bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-200 p-5 rounded-2xl shadow-sm animate-in fade-in zoom-in-95">
-                   <Sparkles className="text-amber-500 shrink-0 mt-1" size={22} />
-                   <div>
-                     <p className="text-xs font-bold text-amber-700 uppercase mb-2 tracking-wide">Guide</p>
-                     <p className="text-base text-slate-700 leading-relaxed">{msg.text}</p>
-                   </div>
+                  <Sparkles className="text-amber-500 shrink-0 mt-1" size={22} />
+                  <div>
+                    <p className="text-xs font-bold text-amber-700 uppercase mb-2 tracking-wide">Guide</p>
+                    <p className="text-base text-slate-700 leading-relaxed">{msg.text}</p>
+                  </div>
                 </div>
               );
             }
@@ -461,26 +465,25 @@ export default function YPlatformApp() {
 
             // Public Clarification Request
             if (msg.isToGuide) {
-               return (
+              return (
                 <div key={msg.id} className={`flex ${isA ? 'justify-start' : 'justify-end'}`}>
                   <div className="bg-slate-100 border border-slate-200 text-slate-600 rounded-2xl p-3 max-w-[80%] shadow-inner">
                     <div className="flex items-center gap-2 mb-1">
-                       <MessageCircle size={12} className="text-slate-400" />
-                       <span className="text-[10px] font-bold uppercase text-slate-400">Public Clarification from {isA ? 'A' : 'B'}</span>
+                      <MessageCircle size={12} className="text-slate-400" />
+                      <span className="text-[10px] font-bold uppercase text-slate-400">Public Clarification from {isA ? 'A' : 'B'}</span>
                     </div>
-                     <p className="text-xs italic">" {msg.text || '(Voice Query)'} "</p>
+                    <p className="text-xs italic">" {msg.text || '(Voice Query)'} "</p>
                   </div>
                 </div>
-               )
+              )
             }
 
             return (
               <div key={msg.id} className={`flex ${isA ? 'justify-start' : 'justify-end'}`}>
-                <div className={`max-w-[85%] rounded-2xl p-4 shadow-md border-2 ${
-                  isA
+                <div className={`max-w-[85%] rounded-2xl p-4 shadow-md border-2 ${isA
                     ? 'bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200 text-slate-800 rounded-tl-none'
                     : 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-slate-800 rounded-tr-none'
-                }`}>
+                  }`}>
                   <div className="flex items-center gap-2 mb-2">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md ${isA ? 'bg-gradient-to-br from-indigo-500 to-indigo-600' : 'bg-gradient-to-br from-emerald-500 to-emerald-600'}`}>
                       {isA ? 'A' : 'B'}
@@ -490,7 +493,7 @@ export default function YPlatformApp() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-sm opacity-60 font-medium">
-                     <Play size={12} fill="currentColor" /> Voice Note • {msg.audioLength}s
+                    <Play size={12} fill="currentColor" /> Voice Note • {msg.audioLength}s
                   </div>
                 </div>
               </div>
@@ -540,23 +543,20 @@ export default function YPlatformApp() {
             <div className="flex flex-col items-center">
               {isRecording ? (
                 <div className="w-full flex flex-col items-center">
-                  <div className={`text-2xl font-mono font-medium mb-4 ${
-                    accentColor === 'amber' ? 'text-amber-500' : turn === 'A' ? 'text-indigo-500' : 'text-emerald-500'
-                  }`}>
+                  <div className={`text-2xl font-mono font-medium mb-4 ${accentColor === 'amber' ? 'text-amber-500' : turn === 'A' ? 'text-indigo-500' : 'text-emerald-500'
+                    }`}>
                     {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
                   </div>
                   <div className="flex gap-1 h-8 items-center mb-6">
-                     {[...Array(15)].map((_, i) => (
-                       <div key={i} className={`w-1 rounded-full animate-pulse ${
-                         accentColor === 'amber' ? 'bg-amber-300' : turn === 'A' ? 'bg-indigo-300' : 'bg-emerald-300'
-                       }`}
-                         style={{ height: `${20 + Math.random() * 80}%`, animationDelay: `${i * 0.05}s` }} />
-                     ))}
+                    {[...Array(15)].map((_, i) => (
+                      <div key={i} className={`w-1 rounded-full animate-pulse ${accentColor === 'amber' ? 'bg-amber-300' : turn === 'A' ? 'bg-indigo-300' : 'bg-emerald-300'
+                        }`}
+                        style={{ height: `${20 + Math.random() * 80}%`, animationDelay: `${i * 0.05}s` }} />
+                    ))}
                   </div>
                   <button onClick={handleStopRecording}
-                    className={`w-16 h-16 rounded-full text-white flex items-center justify-center shadow-lg hover:scale-105 transition-transform ${
-                      accentColor === 'amber' ? 'bg-amber-500 shadow-amber-200' : turn === 'A' ? 'bg-indigo-500 shadow-indigo-200' : 'bg-emerald-500 shadow-emerald-200'
-                    }`}>
+                    className={`w-16 h-16 rounded-full text-white flex items-center justify-center shadow-lg hover:scale-105 transition-transform ${accentColor === 'amber' ? 'bg-amber-500 shadow-amber-200' : turn === 'A' ? 'bg-indigo-500 shadow-indigo-200' : 'bg-emerald-500 shadow-emerald-200'
+                      }`}>
                     <div className="w-6 h-6 bg-white rounded-sm" />
                   </button>
                   <p className="text-xs text-slate-400 mt-3">Tap to stop recording</p>
@@ -594,15 +594,15 @@ export default function YPlatformApp() {
           ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
-                 <div className="flex items-center gap-3">
-                   <div className={`w-8 h-8 rounded-full flex items-center justify-center ${accentColor === 'amber' ? 'bg-amber-100 text-amber-600' : turn === 'A' ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                     <Play size={14} fill="currentColor" />
-                   </div>
-                   <p className="text-sm font-medium text-slate-800 truncate">{transcribedText || "No transcription available."}</p>
-                 </div>
-                 <button onClick={() => setReviewMode(false)} className="text-slate-400 hover:text-red-500 shrink-0">
-                   <RefreshCcw size={18} />
-                 </button>
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${accentColor === 'amber' ? 'bg-amber-100 text-amber-600' : turn === 'A' ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                    <Play size={14} fill="currentColor" />
+                  </div>
+                  <p className="text-sm font-medium text-slate-800 truncate">{transcribedText || "No transcription available."}</p>
+                </div>
+                <button onClick={() => setReviewMode(false)} className="text-slate-400 hover:text-red-500 shrink-0">
+                  <RefreshCcw size={18} />
+                </button>
               </div>
               <Button onClick={handleSend} variant={accentColor === 'amber' ? 'guideActive' : turn === 'A' ? 'primary' : 'secondary'} className="w-full" disabled={!transcribedText}>
                 {isPrivateMode ? 'Get Private Hint from Guide' : isGuideMode ? 'Send Public Clarification' : `Send as ${turn === 'A' ? 'User A' : 'User B'}`}
